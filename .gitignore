@@ -9,3 +9,7 @@ wheels/
 # Virtual environments
 .venv
 ex/
+chunks.txt
+files.json
+tst.py
+data/
