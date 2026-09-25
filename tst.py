@@ -1,22 +1,26 @@
-from pathlib import Path
-from src.chunker import TextChunker, PythonChunker
+import bm25s
 
-def get_files(dataset_path):
-    path_obj = Path(dataset_path)
-    if not path_obj.exists():
-        raise Exception(f"Error: This directory doesn't exist!")
-    files = [item for item in path_obj.rglob("*") if item.is_file() and item.suffix.lower() in ['.md', '.txt', '.py']]
-    file_paths = {
-        '.md': [str(item) for item in files if item.suffix.lower() == '.md'],
-        '.txt': [str(item) for item in files if item.suffix.lower() == '.txt'],
-        '.py': [str(item) for item in files if item.suffix.lower() == '.py']
-    }
-    return file_paths
+# 1. Define your corpus
+corpus = [
+    "The quick brown fox jumps over the lazy dog.",
+    "Artificial intelligence and machine learning are changing the world.",
+    "Python is a popular programming language for data science.",
+    "Retrieval-Augmented Generation helps LLMs query custom documents."
+]
 
+# 2. Tokenize the corpus (simple whitespace/punctuation splitting)
+corpus_tokens = bm25s.tokenize(corpus, stopwords="english")
 
+# 3. Initialize and build the BM25 index
+retriever = bm25s.BM25()
+retriever.index(corpus_tokens)
 
-files = get_files("data/raw/")
-chunker = PythonChunker()
-chunks = chunker.chunk(files['.py'][0])
+# 4. Query the index
+query = "Python data science programming"
+query_tokens = bm25s.tokenize(query)
 
-print(chunks)
+# Retrieve the top 2 most relevant documents
+documents, scores = retriever.retrieve(query_tokens, corpus=corpus, k=2)
+
+for doc, score in zip(documents[0], scores[0]):
+    print(f"Score: {score:.4f} | Document: {doc}")
