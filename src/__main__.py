@@ -1,19 +1,21 @@
+import chromadb
+import bm25s
 import fire
+import json
 import re
 from tqdm import tqdm
 from pathlib import Path
+from src.llm_model import LLM_Model
 from src.chunker import TextChunker, PythonChunker
 from src.models import MinimalSource, MinimalSearchResults, StudentSearchResults
 from src.constants import CHUNK_PATH, BM25_PATH
-import chromadb
-import bm25s
-import json
 
 class RagCLI:
     """Command-Line Interface for the RAG against the machine pipeline."""
 
     def __init__(self):
         self.dataset_path = Path("data/raw")
+        self.model = LLM_Model("Qwen/Qwen3-0.6B")
         self.all_chunks = []
 
     def _tokenizer(self, text: str):
@@ -127,10 +129,13 @@ class RagCLI:
         save_directory = save_directory / 'student_results.json'
         with open(save_directory, 'w') as file:
             file.write(output.model_dump_json(indent=2))
-
+    
     def answer(self, query: str, k: int) -> None:
         """Answer a single query using the retrieved context."""
-        pass
+        results = self._bm25_search(query, k)
+        output = self.model.generate(query, results, 256)
+        
+        print(f"\nFINAL ANSWER:\n{output}")
 
     def answer_dataset(self, student_search_results_path: str, save_directory: str) -> None:
         """Generate answers for a dataset, producing a final JSON file."""
