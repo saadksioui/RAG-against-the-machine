@@ -3,6 +3,7 @@ import re
 from tqdm import tqdm
 from pathlib import Path
 from src.chunker import TextChunker, PythonChunker
+from src.models import MinimalSource, MinimalSearchResults, StudentSearchResults
 from src.constants import CHUNK_PATH, BM25_PATH
 import chromadb
 import bm25s
@@ -80,7 +81,7 @@ class RagCLI:
         retriever = bm25s.BM25.load(BM25_PATH, load_corpus=False)
         query_text = self._tokenizer(query)
         query_tokens = bm25s.tokenize([query_text])
-        results, scores = retriever.retrieve(query_tokens, corpus=None, k=k)
+        results, _ = retriever.retrieve(query_tokens, corpus=None, k=k)
         winners = [self.all_chunks[r] for r in results[0]]
         return winners
 
@@ -90,16 +91,42 @@ class RagCLI:
     def search(self, query: str, k: int) -> None:
         """Return the top-k sources for a single query."""
         results = self._bm25_search(query, k)
-        for i, item in enumerate(results, start=1):
-            print(f"Result {i}:")
-            print(f"    File: {item['metadata']['file_path']}")
-            print(f"    Start: {item['metadata']['first_character_index']}")
-            print(f"    End: {item['metadata']['last_character_index']}")
-            print(f"    Content: {item['content']}")
+        for item in results:
+            start = item['metadata']['first_character_index']
+            end = item['metadata']['last_character_index']
+            file_path = item['metadata']['file_path']
+            print(f"{file_path} [{start}:{end}]")
 
     def search_dataset(self, dataset_path: str, k: int, save_directory: str) -> None:
         """Run search over a whole dataset and write results to JSON."""
-        pass
+        try:
+            with open(dataset_path, 'r') as file:
+                questions = json.load(file)['rag_questions']
+        except FileNotFoundError:
+            print(f"This path `{dataset_path}` is incorrect!!")
+            exit(1)
+        dataset_name = Path(dataset_path).stem
+        save_directory = Path(save_directory) / dataset_name
+        all_results = []
+
+        for question in tqdm(questions):
+            results = self._bm25_search(question['question'], k)
+            all_results.append(
+                MinimalSearchResults(
+                    question_id=question['question_id'],
+                    question=question['question'],
+                    retrieved_sources=[MinimalSource(
+                        file_path=res['metadata']['file_path'],
+                        first_character_index=res['metadata']['first_character_index'],
+                        last_character_index=res['metadata']['last_character_index']
+                    ) for res in results]
+                )
+            )
+        output = StudentSearchResults(search_results=all_results, k=k)
+        save_directory.mkdir(parents=True, exist_ok=True)
+        save_directory = save_directory / 'student_results.json'
+        with open(save_directory, 'w') as file:
+            file.write(output.model_dump_json(indent=2))
 
     def answer(self, query: str, k: int) -> None:
         """Answer a single query using the retrieved context."""
