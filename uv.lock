@@ -3171,6 +3171,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "sentence-transformers" },
     { name = "tqdm" },
+    { name = "transformers" },
 ]
 
 [package.metadata]
@@ -3183,6 +3184,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "sentence-transformers", specifier = ">=6.1.0" },
     { name = "tqdm", specifier = ">=4.70.0" },
+    { name = "transformers", specifier = ">=5.17.0" },
 ]
 
 [[package]]
