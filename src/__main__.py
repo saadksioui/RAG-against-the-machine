@@ -7,7 +7,7 @@ from tqdm import tqdm
 from pathlib import Path
 from src.llm_model import LLM_Model
 from src.chunker import TextChunker, PythonChunker
-from src.models import MinimalSource, MinimalSearchResults, StudentSearchResults
+from src.models import MinimalSource, MinimalSearchResults, StudentSearchResults, MinimalAnswer, StudentSearchResultsAndAnswer, RagDataset
 from src.constants import CHUNK_PATH, BM25_PATH
 
 class RagCLI:
@@ -139,12 +139,83 @@ class RagCLI:
 
     def answer_dataset(self, student_search_results_path: str, save_directory: str) -> None:
         """Generate answers for a dataset, producing a final JSON file."""
-        pass
+        dataset_name = Path(student_search_results_path).parent.name
+        output_dir = Path(save_directory) / dataset_name
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        with open(student_search_results_path, 'r') as file:
+            student_search_results = StudentSearchResults.model_validate_json(file.read())
+
+        save_directory = output_dir / 'student_results.json'
+        results = student_search_results.search_results
+        k = student_search_results.k
+        final_answers = []
+
+        for item in tqdm(results):
+            question_id = item.question_id
+            question = item.question
+            retrieved_sources = item.retrieved_sources
+            chunks = self._bm25_search(question, k)
+            answer = self.model.generate(question, chunks, 256)
+            res = MinimalAnswer(
+                question_id = question_id,
+                question = question,
+                retrieved_sources = retrieved_sources,
+                answer = answer
+            )
+            final_answers.append(res)
+        result = StudentSearchResultsAndAnswer(search_results=final_answers, k=k)
+        with open(save_directory, 'w') as file:
+            file.write(result.model_dump_json(indent=2))
+
+    def _calculate_iou(self, start1: int, end1: int, start2: int, end2: int) -> float:
+        overlap = max(0, min(end1, end2) - max(start1, start2))
+        union = (end1 - start1) + (end2 - start2) - overlap
+        return overlap / union if union > 0 else 0.0
 
     def evaluate(self, student_search_results_path: str, dataset_path: str) -> None:
         """Report recall@k against a ground-truth dataset."""
-        pass
+        try:
+            with open(student_search_results_path) as file:
+                student_search_results = StudentSearchResults.model_validate_json(file.read()).search_results
+        except FileNotFoundError:
+            print("Error: run search_dataset first!")
+            exit(1)
+        try:
+            with open(dataset_path) as file:
+                dataset_results = RagDataset.model_validate_json(file.read()).rag_questions
+        except FileNotFoundError:
+            print("Error")
+            exit(1)
 
+        student_dict = {
+            item.question_id: item 
+            for item in student_search_results
+        }
+        total_recall = 0.0
+        num_ques = len(dataset_results)
+        for res in dataset_results:
+            student_res = student_dict.get(res.question_id)
+            if not student_res:
+                continue
+            matched_count = 0
+            for source in res.sources:
+                source_is_found = False
+                for retrieved in student_res.retrieved_sources:
+                    if source.file_path == retrieved.file_path:
+                        start1, end1 = source.first_character_index, source.last_character_index
+                        start2, end2 = retrieved.first_character_index, retrieved.last_character_index
+                        iou = self._calculate_iou(start1, end1, start2, end2)
+                        if iou >= 0.05:
+                            source_is_found = True
+                            break
+                if source_is_found:
+                    matched_count += 1
+            total_recall += matched_count / len(res.sources)
+                
+        average_recall = total_recall / num_ques
+        print(f"Local Recall@k: {average_recall * 100:.2f}%")
+        
 
 if __name__ == "__main__":
     fire.Fire(RagCLI)
