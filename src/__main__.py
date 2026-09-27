@@ -97,18 +97,30 @@ class RagCLI:
         winners = [self.all_chunks[r] for r in results[0]]
         return winners
 
-    def _semantic_search(self, query):
-        results = self.collection.query(query_texts=[query], n_results=2)
-        print(results)
+    def _semantic_search(self, query: str, k: int):
+        results = self.collection.query(query_texts=[query], n_results=k)
+        outputs = [
+            {
+                "id": doc_id,
+                "document": document,
+                "metadata": metadata,
+                "distance": distance,
+            }
+            for doc_id, document, metadata, distance in zip(
+                results["ids"][0],
+                results["documents"][0],
+                results["metadatas"][0],
+                results["distances"][0],
+            )
+        ]
+        return outputs
+
 
     def search(self, query: str, k: int) -> None:
         """Return the top-k sources for a single query."""
-        results = self._bm25_search(query, k)
-        for item in results:
-            start = item['metadata']['first_character_index']
-            end = item['metadata']['last_character_index']
-            file_path = item['metadata']['file_path']
-            print(f"{file_path} [{start}:{end}]")
+        bm25_results = self._bm25_search(query, k)
+        semantic_results = self._semantic_search(query, k)
+        return semantic_results
 
     def search_dataset(self, dataset_path: str, k: int, save_directory: str) -> None:
         """Run search over a whole dataset and write results to JSON."""
@@ -123,7 +135,7 @@ class RagCLI:
         all_results = []
 
         for question in tqdm(questions):
-            results = self._bm25_search(question['question'], k)
+            results = self.search(question['question'], k)
             all_results.append(
                 MinimalSearchResults(
                     question_id=question['question_id'],
