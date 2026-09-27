@@ -16,6 +16,8 @@ class RagCLI:
     def __init__(self):
         self.dataset_path = Path("data/raw")
         self.model = LLM_Model("Qwen/Qwen3-0.6B")
+        self.client = chromadb.PersistentClient(path="data/chroma_db")
+        self.collection = self.client.get_or_create_collection("rag_42")
         self.all_chunks = []
 
     def _tokenizer(self, text: str):
@@ -32,7 +34,6 @@ class RagCLI:
         files = [item for item in self.dataset_path.rglob("*")
                  if item.is_file() and item.suffix.lower()
                  in ['.md', '.txt', '.py']]
-
         processed_chunks = []
         documents = []
         metadatas = []
@@ -61,12 +62,21 @@ class RagCLI:
                 metadatas.append(metadata)
                 ids.append(idx)
                 global_counter += 1
-
         corpus_tokens = bm25s.tokenize(processed_chunks)
         retriver = bm25s.BM25()
         retriver.index(corpus_tokens)
         retriver.save(BM25_PATH)
 
+        batch_size = 5000
+        total_chunks = len(ids)
+        for i in tqdm(range(0, total_chunks, batch_size), desc="Indexing"):
+            self.collection.add(
+                documents=documents[i : i + batch_size],
+                metadatas=metadatas[i : i + batch_size],
+                ids=ids[i : i + batch_size]
+            )
+            
+        print("Semantic & Lexical indexing complete!")
         CHUNK_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(CHUNK_PATH, 'w', encoding='utf-8') as file:
             json.dump(self.all_chunks, file, indent=2)
@@ -87,8 +97,9 @@ class RagCLI:
         winners = [self.all_chunks[r] for r in results[0]]
         return winners
 
-    def _semantic_search():
-        pass
+    def _semantic_search(self, query):
+        results = self.collection.query(query_texts=[query], n_results=2)
+        print(results)
 
     def search(self, query: str, k: int) -> None:
         """Return the top-k sources for a single query."""
