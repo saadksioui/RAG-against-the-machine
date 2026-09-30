@@ -1,4 +1,5 @@
 import chromadb
+import hashlib
 import bm25s
 import fire
 import json
@@ -7,8 +8,15 @@ from tqdm import tqdm
 from pathlib import Path
 from src.llm_model import LLM_Model
 from src.chunker import TextChunker, PythonChunker
-from src.models import MinimalSource, MinimalSearchResults, StudentSearchResults, MinimalAnswer, StudentSearchResultsAndAnswer, RagDataset
-from src.constants import CHUNK_PATH, BM25_PATH
+from src.models import (
+    MinimalSource,
+    MinimalSearchResults,
+    StudentSearchResults,
+    MinimalAnswer,
+    StudentSearchResultsAndAnswer,
+    RagDataset
+)
+from src.constants import CHUNK_PATH, BM25_PATH, SYNC_STATE
 
 class RagCLI:
     """Command-Line Interface for the RAG against the machine pipeline."""
@@ -27,13 +35,22 @@ class RagCLI:
         tokens = text.replace('_', ' ').replace('.', ' ').replace('-', ' ')
         return tokens
 
+    def _get_file_hash(self, filepath: Path) -> str:
+        hash_obj = hashlib.sha256()
+        with open(filepath, "rb") as file:
+            while chunk := file.read(4006):
+                hash_obj.update(chunk)
+        return hash_obj.hexdigest()
+
     def index(self, max_chunk_size: int = 2000) -> None:
         """Ingest data/raw/ and build the index under data/processed/."""
         if not self.dataset_path.exists():
             raise Exception(f"Error: This directory doesn't exist!")
+
         files = [item for item in self.dataset_path.rglob("*")
                  if item.is_file() and item.suffix.lower()
                  in ['.md', '.txt', '.py']]
+
         processed_chunks = []
         documents = []
         metadatas = []
@@ -115,14 +132,43 @@ class RagCLI:
         ]
         return outputs
 
-
-    def search(self, query: str, k: int) -> None:
-        """Return the top-k sources for a single query."""
+    def _hybrid_search(self, query: str, k: int):
         bm25_results = self._bm25_search(query, k)
         semantic_results = self._semantic_search(query, k)
-        return semantic_results
+        rrf_scores = {}
+        metadata_lookup = {}
+        for idx, item in enumerate(bm25_results):
+            doc_id = item['id']
+            metadata_lookup[doc_id] = item['metadata']
+            rank = idx + 1
+            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank)
 
-    def search_dataset(self, dataset_path: str, k: int, save_directory: str) -> None:
+        for idx, item in enumerate(semantic_results):
+            doc_id = item['id']
+            metadata_lookup[doc_id] = item['metadata']
+            rank = idx + 1
+            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank)
+
+        sorted_ids = sorted(rrf_scores.items(), key=lambda item: item[1], reverse=True)
+        top_k_results = []
+        for doc_id, score in sorted_ids[:k]:
+            top_k_results.append({
+                "id": doc_id,
+                "rrf_score": score,
+                "metadata": metadata_lookup[doc_id]
+            })
+        return top_k_results
+
+    def search(self, query: str, k: int, search_mode: str = 'bm25') -> None:
+        """Return the top-k sources for a single query."""
+        if search_mode == 'bm25':
+            return self._bm25_search(query, k)
+        elif search_mode == 'semantic':
+            return self._semantic_search(query, k)
+        elif search_mode == 'hybrid':
+            return self._hybrid_search(query, k)
+
+    def search_dataset(self, dataset_path: str, k: int, save_directory: str, search_mode: str = 'bm25') -> None:
         """Run search over a whole dataset and write results to JSON."""
         try:
             with open(dataset_path, 'r') as file:
@@ -135,7 +181,13 @@ class RagCLI:
         all_results = []
 
         for question in tqdm(questions):
-            results = self.search(question['question'], k)
+            query = question['question']
+            if search_mode == 'bm25':
+                results = self._bm25_search(query, k)
+            elif search_mode == 'semantic':
+                results = self._semantic_search(query, k)
+            elif search_mode == 'hybrid':
+                results = self._hybrid_search(query, k)
             all_results.append(
                 MinimalSearchResults(
                     question_id=question['question_id'],

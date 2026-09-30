@@ -1,17 +1,9 @@
-import chromadb
+import hashlib
 
-def test_semantic_search():
-    # 1. Initialize client and collection
-    client = chromadb.Client()
-    collection = client.create_collection("my_test")
-    documents = ["The feline chased the laser.", "The vehicle has four wheels.", "Data is stored on the hard drive."]
-    metadatas = [{"source": "cat.txt"}, {"source": "car.txt"}, {"source": "pc.txt"}]
-    ids = ["id1", "id2", "id3"]
-    collection.add(documents=documents, metadatas=metadatas, ids=ids)
+text = "Hello World"
 
-    results = collection.query(query_texts=["How many sick leaves do employees get?"], n_results=2)
-    
-    print(results)
+# Encode the string to bytes and calculate the MD5 hash
+md5_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
 
-if __name__ == "__main__":
-    test_semantic_search()
+print(md5_hash)
+# Output: b10a8db164e0754105b7a99be72e3fe5
