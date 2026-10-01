@@ -26,6 +26,7 @@ class RagCLI:
         self.model = LLM_Model("Qwen/Qwen3-0.6B")
         self.client = chromadb.PersistentClient(path="data/chroma_db")
         self.collection = self.client.get_or_create_collection("rag_42")
+        self.cache_file = Path("data/processed/query_cache.json")
         self.all_chunks = []
 
     def _tokenizer(self, text: str):
@@ -80,6 +81,8 @@ class RagCLI:
         if not new_files and not modified_files and not deleted_files:
             print("No changes detected. Index is up to date!")
             return
+
+        self.cache_file.unlink(missing_ok=True)
 
         print(f"Sync stats: {len(new_files)} new, {len(modified_files)} modified, {len(deleted_files)} deleted.")
 
@@ -212,11 +215,17 @@ class RagCLI:
     def search(self, query: str, k: int, search_mode: str = 'bm25') -> None:
         """Return the top-k sources for a single query."""
         if search_mode == 'bm25':
-            return self._bm25_search(query, k)
+            results = self._bm25_search(query, k)
         elif search_mode == 'semantic':
-            return self._semantic_search(query, k)
+            results = self._semantic_search(query, k)
         elif search_mode == 'hybrid':
-            return self._hybrid_search(query, k)
+            results = self._hybrid_search(query, k)
+        
+        for src in results:
+            start = src['metadata']['first_character_index']
+            end = src['metadata']['last_character_index']
+            file_path = src['metadata']['file_path']
+            print(f"{file_path} [{start}: {end}]")
 
     def search_dataset(self, dataset_path: str, k: int, save_directory: str, search_mode: str = 'bm25') -> None:
         """Run search over a whole dataset and write results to JSON."""
