@@ -38,7 +38,7 @@ class RagCLI:
     def _get_file_hash(self, filepath: Path) -> str:
         hash_obj = hashlib.sha256()
         with open(filepath, "rb") as file:
-            while chunk := file.read(4006):
+            while chunk := file.read(4000):
                 hash_obj.update(chunk)
         return hash_obj.hexdigest()
 
@@ -47,57 +47,107 @@ class RagCLI:
         if not self.dataset_path.exists():
             raise Exception(f"Error: This directory doesn't exist!")
 
+
+        sync_state = {}
+        if SYNC_STATE.exists():
+            try:
+                with open(SYNC_STATE, 'r', encoding='utf-8') as f:
+                    sync_state = json.load(f)
+            except json.JSONDecodeError:
+                sync_state = {}
+
         files = [item for item in self.dataset_path.rglob("*")
                  if item.is_file() and item.suffix.lower()
                  in ['.md', '.txt', '.py']]
 
-        processed_chunks = []
-        documents = []
-        metadatas = []
-        ids = []
-        global_counter = 0
-        for file in tqdm(files, desc="Chunking"):
-            if file.suffix.lower() == '.py':
-                chunks = PythonChunker(max_chunk_size).chunk(file)
-            elif file.suffix.lower() in ['.md', '.txt']:
-                chunks = TextChunker(max_chunk_size).chunk(file)
-            for chunk in chunks:
-                idx = f'doc_{global_counter}'
-                metadata = {
-                    'file_path': chunk.file_path,
-                    'first_character_index': chunk.first_character_index,
-                    'last_character_index': chunk.last_character_index
-                }
+        current_files = {}
+        new_files = []
+        modified_files = []
+        unchanged_files = []
+        for file in files:
+            file = str(file)
+            file_hash = self._get_file_hash(file)
+            current_files[file] = file_hash
+            if file not in sync_state:
+                new_files.append(file)
+            elif sync_state[file] != file_hash:
+                modified_files.append(file)
+            elif sync_state[file] == file_hash:
+                unchanged_files.append(file)
 
-                self.all_chunks.append({
-                    'id': idx,
-                    'content': chunk.content,
-                    'metadata': metadata
-                })
-                processed_chunks.append(self._tokenizer(chunk.content))
-                documents.append(chunk.content)
-                metadatas.append(metadata)
-                ids.append(idx)
-                global_counter += 1
-        corpus_tokens = bm25s.tokenize(processed_chunks)
-        retriver = bm25s.BM25()
-        retriver.index(corpus_tokens)
-        retriver.save(BM25_PATH)
+        deleted_files = set(sync_state.keys()) - set(current_files.keys())
 
-        batch_size = 5000
-        total_chunks = len(ids)
-        for i in tqdm(range(0, total_chunks, batch_size), desc="Indexing"):
-            self.collection.add(
-                documents=documents[i : i + batch_size],
-                metadatas=metadatas[i : i + batch_size],
-                ids=ids[i : i + batch_size]
-            )
-            
+        if not new_files and not modified_files and not deleted_files:
+            print("No changes detected. Index is up to date!")
+            return
+
+        print(f"Sync stats: {len(new_files)} new, {len(modified_files)} modified, {len(deleted_files)} deleted.")
+
+        files_to_remove = list(deleted_files) + modified_files
+        for file in files_to_remove:
+            self.collection.delete(where={'file_path': file})
+
+        if CHUNK_PATH.exists():
+            with open(CHUNK_PATH, 'r', encoding='utf-8') as file:
+                self.all_chunks = json.load(file)
+
+        if self.all_chunks:
+            self.all_chunks = [
+                chunk for chunk in self.all_chunks
+                if chunk['metadata']['file_path'] not in files_to_remove
+            ]
+        process_files = new_files + modified_files
+
+        if process_files:
+            documents = []
+            metadatas = []
+            ids = []
+            for file in tqdm(process_files, desc="Chunking"):
+                file = Path(file)
+                if file.suffix.lower() == '.py':
+                    chunks = PythonChunker(max_chunk_size).chunk(file)
+                elif file.suffix.lower() in ['.md', '.txt']:
+                    chunks = TextChunker(max_chunk_size).chunk(file)
+                for chunk in chunks:
+                    idx = f"{chunk.file_path}_{chunk.first_character_index}"
+                    metadata = {
+                        'file_path': chunk.file_path,
+                        'first_character_index': chunk.first_character_index,
+                        'last_character_index': chunk.last_character_index
+                    }
+
+                    self.all_chunks.append({
+                        'id': idx,
+                        'content': chunk.content,
+                        'metadata': metadata
+                    })
+                    documents.append(chunk.content)
+                    metadatas.append(metadata)
+                    ids.append(idx)
+
+            all_contents = [chunk['content'] for chunk in self.all_chunks]
+            processed_chunks = [self._tokenizer(chunk) for chunk in all_contents]
+            corpus_tokens = bm25s.tokenize(processed_chunks)
+            retriver = bm25s.BM25()
+            retriver.index(corpus_tokens)
+            retriver.save(BM25_PATH)
+
+            batch_size = 5000
+            total_chunks = len(ids)
+            for i in tqdm(range(0, total_chunks, batch_size), desc="Indexing"):
+                self.collection.add(
+                    documents=documents[i : i + batch_size],
+                    metadatas=metadatas[i : i + batch_size],
+                    ids=ids[i : i + batch_size]
+                )
+        
         print("Semantic & Lexical indexing complete!")
         CHUNK_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(CHUNK_PATH, 'w', encoding='utf-8') as file:
             json.dump(self.all_chunks, file, indent=2)
 
+        with open(SYNC_STATE, 'w', encoding='utf-8') as f:
+            json.dump(current_files, f, indent=2)
 
     def _bm25_search(self, query: str, k: int) -> list[dict]:
         if not self.all_chunks:
