@@ -266,6 +266,7 @@ class RagCLI:
     
     def answer(self, query: str, k: int) -> None:
         """Answer a single query using the retrieved context."""
+        
         results = self._bm25_search(query, k)
         output = self.model.generate(query, results, 256)
         
