@@ -1,8 +1,8 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 
-class LLM_Model:
-    def __init__(self, model_name: str="Qwen/Qwen3-0.6B"):
+class LLMModel:
+    def __init__(self, model_name: str = "Qwen/Qwen3-0.6B"):
         self.model = AutoModelForCausalLM.from_pretrained(model_name)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
@@ -16,12 +16,15 @@ class LLM_Model:
             ANSWER:
         """)
 
-    def generate(self, query: str, chunks: list[dict], max_tokens: int = 256) -> str:
+    def generate(self, query: str,
+                 chunks: list[dict], max_tokens: int = 256) -> str:
         prompt = self._build_prompt(query, chunks)
         messages = [
             {
                 "role": "system",
-                "content": "You are an expert programming assistant. Answer the user's question using ONLY the provided context. Do not use outside knowledge."
+                "content": "You are an expert programming assistant."
+                "Answer the user's question using ONLY the provided"
+                "context. Do not use outside knowledge."
             },
             {
                 "role": "user",

@@ -24,7 +24,8 @@ app = FastAPI(title="RAG Against The Machine API", lifespan=lifespan)
 @app.post('/search')
 def rag_search(request: QueryRequest):
     try:
-        result = app.state.service.search(request.query, request.k, request.search_mode)
+        result = app.state.service.search(
+            request.query, request.k, request.search_mode)
         return {"query": request.query, "results": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -33,7 +34,8 @@ def rag_search(request: QueryRequest):
 @app.post('/answer')
 def rag_answer(request: QueryRequest):
     try:
-        result = app.state.service.answer(request.query, request.k, request.search_mode)
+        result = app.state.service.answer(
+            request.query, request.k, request.search_mode)
         return {"query": request.query, "results": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

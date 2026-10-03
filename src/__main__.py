@@ -6,7 +6,7 @@ import json
 import re
 from tqdm import tqdm
 from pathlib import Path
-from src.llm_model import LLM_Model
+from src.llm_model import LLMModel
 from src.cache import Cache
 from src.chunker import TextChunker, PythonChunker
 from src.models import (
@@ -19,12 +19,13 @@ from src.models import (
 )
 from src.constants import CHUNK_PATH, BM25_PATH, SYNC_STATE
 
+
 class RagCLI:
     """Command-Line Interface for the RAG against the machine pipeline."""
 
     def __init__(self):
         self.dataset_path = Path("data/raw")
-        self.model = LLM_Model("Qwen/Qwen3-0.6B")
+        self.model = LLMModel("Qwen/Qwen3-0.6B")
         self.client = chromadb.PersistentClient(path="data/chroma_db")
         self.collection = self.client.get_or_create_collection("rag_42")
         self.cache = Cache("data/processed/cache", "llm_answers_cache.json")
@@ -47,8 +48,8 @@ class RagCLI:
     def index(self, max_chunk_size: int = 2000) -> None:
         """Ingest data/raw/ and build the index under data/processed/."""
         if not self.dataset_path.exists():
-            raise Exception(f"Error: This directory doesn't exist!")
-
+            raise Exception("Error: This directory "
+                            f"`{self.dataset_path}` doesn't exist!")
 
         sync_state = {}
         if SYNC_STATE.exists():
@@ -85,7 +86,11 @@ class RagCLI:
 
         self.cache.flush()
 
-        print(f"Sync stats: {len(new_files)} new, {len(modified_files)} modified, {len(deleted_files)} deleted.")
+        print(
+            f"Sync stats: {len(new_files)} new,"
+            "{len(modified_files)} modified,"
+            "{len(deleted_files)} deleted."
+        )
 
         files_to_remove = list(deleted_files) + modified_files
         for file in files_to_remove:
@@ -130,7 +135,8 @@ class RagCLI:
                     ids.append(idx)
 
             all_contents = [chunk['content'] for chunk in self.all_chunks]
-            processed_chunks = [self._tokenizer(chunk) for chunk in all_contents]
+            processed_chunks = [
+                self._tokenizer(chunk) for chunk in all_contents]
             corpus_tokens = bm25s.tokenize(processed_chunks)
             retriver = bm25s.BM25()
             retriver.index(corpus_tokens)
@@ -140,11 +146,11 @@ class RagCLI:
             total_chunks = len(ids)
             for i in tqdm(range(0, total_chunks, batch_size), desc="Indexing"):
                 self.collection.add(
-                    documents=documents[i : i + batch_size],
-                    metadatas=metadatas[i : i + batch_size],
-                    ids=ids[i : i + batch_size]
+                    documents=documents[i: i + batch_size],
+                    metadatas=metadatas[i: i + batch_size],
+                    ids=ids[i: i + batch_size]
                 )
-        
+
         print("Semantic & Lexical indexing complete!")
         CHUNK_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(CHUNK_PATH, 'w', encoding='utf-8') as file:
@@ -159,7 +165,8 @@ class RagCLI:
                 with open(CHUNK_PATH, 'r') as file:
                     self.all_chunks = json.load(file)
             except FileNotFoundError:
-                print(f"Error: Run `uv run python -m src index` First!!!")
+                print("Error: Run `uv run "
+                      "python -m src index` First!!!")
                 exit(1)
         retriever = bm25s.BM25.load(BM25_PATH, load_corpus=False)
         query_text = self._tokenizer(query)
@@ -203,7 +210,10 @@ class RagCLI:
             rank = idx + 1
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank)
 
-        sorted_ids = sorted(rrf_scores.items(), key=lambda item: item[1], reverse=True)
+        sorted_ids = sorted(
+            rrf_scores.items(),
+            key=lambda item: item[1],
+            reverse=True)
         top_k_results = []
         for doc_id, score in sorted_ids[:k]:
             top_k_results.append({
@@ -223,7 +233,7 @@ class RagCLI:
             results = self._hybrid_search(query, k)
 
         output = []
-        
+
         for src in results:
             start = src['metadata']['first_character_index']
             end = src['metadata']['last_character_index']
@@ -232,7 +242,8 @@ class RagCLI:
             print(f"{file_path} [{start}: {end}]")
         return output
 
-    def search_dataset(self, dataset_path: str, k: int, save_directory: str, search_mode: str = 'bm25') -> None:
+    def search_dataset(self, dataset_path: str, k: int,
+                       save_directory: str, search_mode: str = 'bm25') -> None:
         """Run search over a whole dataset and write results to JSON."""
         try:
             with open(dataset_path, 'r') as file:
@@ -258,8 +269,10 @@ class RagCLI:
                     question=question['question'],
                     retrieved_sources=[MinimalSource(
                         file_path=res['metadata']['file_path'],
-                        first_character_index=res['metadata']['first_character_index'],
-                        last_character_index=res['metadata']['last_character_index']
+                        first_character_index=res['metadata']
+                        ['first_character_index'],
+                        last_character_index=res['metadata']
+                        ['last_character_index']
                     ) for res in results]
                 )
             )
@@ -268,7 +281,7 @@ class RagCLI:
         save_directory = save_directory / 'student_results.json'
         with open(save_directory, 'w') as file:
             file.write(output.model_dump_json(indent=2))
-    
+
     def answer(self, query: str, k: int, search_mode: str = "bm25") -> None:
         """Answer a single query using the retrieved context."""
         cache_result = self.cache.get(query, k, search_mode)
@@ -284,18 +297,20 @@ class RagCLI:
             results = self._hybrid_search(query, k)
         output = self.model.generate(query, results, 256)
         self.cache.set(query, k, search_mode, output)
-        
+
         print(f"\nFINAL ANSWER:\n{output}")
         return output
 
-    def answer_dataset(self, student_search_results_path: str, save_directory: str, search_mode: str = "bm25") -> None:
+    def answer_dataset(self, student_search_results_path: str,
+                       save_directory: str, search_mode: str = "bm25") -> None:
         """Generate answers for a dataset, producing a final JSON file."""
         dataset_name = Path(student_search_results_path).parent.name
         output_dir = Path(save_directory) / dataset_name
         output_dir.mkdir(parents=True, exist_ok=True)
 
         with open(student_search_results_path, 'r') as file:
-            student_search_results = StudentSearchResults.model_validate_json(file.read())
+            student_search_results = StudentSearchResults.model_validate_json(
+                file.read())
 
         save_directory = output_dir / 'student_results.json'
         results = student_search_results.search_results
@@ -321,39 +336,44 @@ class RagCLI:
                 self.cache.set(question, k, search_mode, answer)
 
             res = MinimalAnswer(
-                question_id = question_id,
-                question = question,
-                retrieved_sources = retrieved_sources,
-                answer = answer
+                question_id=question_id,
+                question=question,
+                retrieved_sources=retrieved_sources,
+                answer=answer
             )
             final_answers.append(res)
-        result = StudentSearchResultsAndAnswer(search_results=final_answers, k=k)
+        result = StudentSearchResultsAndAnswer(
+            search_results=final_answers, k=k)
         with open(save_directory, 'w') as file:
             file.write(result.model_dump_json(indent=2))
 
-    def _calculate_iou(self, start1: int, end1: int, start2: int, end2: int) -> float:
+    def _calculate_iou(self, start1: int, end1: int,
+                       start2: int, end2: int) -> float:
         overlap = max(0, min(end1, end2) - max(start1, start2))
         union = (end1 - start1) + (end2 - start2) - overlap
         return overlap / union if union > 0 else 0.0
 
-    def evaluate(self, student_search_results_path: str, dataset_path: str) -> None:
+    def evaluate(self, student_search_results_path: str,
+                 dataset_path: str) -> None:
         """Report recall@k against a ground-truth dataset."""
         try:
             with open(student_search_results_path) as file:
-                student_search_results = StudentSearchResults.model_validate_json(file.read()).search_results
+                student_search = StudentSearchResults.model_validate_json(
+                    file.read()).search_results
         except FileNotFoundError:
             print("Error: run search_dataset first!")
             exit(1)
         try:
             with open(dataset_path) as file:
-                dataset_results = RagDataset.model_validate_json(file.read()).rag_questions
+                dataset_results = RagDataset.model_validate_json(
+                    file.read()).rag_questions
         except FileNotFoundError:
             print("Error")
             exit(1)
 
         student_dict = {
-            item.question_id: item 
-            for item in student_search_results
+            item.question_id: item
+            for item in student_search
         }
         total_recall = 0.0
         num_ques = len(dataset_results)
@@ -366,8 +386,10 @@ class RagCLI:
                 source_is_found = False
                 for retrieved in student_res.retrieved_sources:
                     if source.file_path == retrieved.file_path:
-                        start1, end1 = source.first_character_index, source.last_character_index
-                        start2, end2 = retrieved.first_character_index, retrieved.last_character_index
+                        start1, end1 = (source.first_character_index,
+                                        source.last_character_index)
+                        start2, end2 = (retrieved.first_character_index,
+                                        retrieved.last_character_index)
                         iou = self._calculate_iou(start1, end1, start2, end2)
                         if iou >= 0.05:
                             source_is_found = True
@@ -375,10 +397,10 @@ class RagCLI:
                 if source_is_found:
                     matched_count += 1
             total_recall += matched_count / len(res.sources)
-                
+
         average_recall = total_recall / num_ques
         print(f"Local Recall@k: {average_recall * 100:.2f}%")
-        
+
 
 if __name__ == "__main__":
     fire.Fire(RagCLI)

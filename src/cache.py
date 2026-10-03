@@ -3,6 +3,7 @@ import os
 import json
 import hashlib
 
+
 class Cache:
     def __init__(self, cache_dir: str, cache_file: str):
         self.cache_dir = cache_dir
@@ -10,7 +11,8 @@ class Cache:
         os.makedirs(self.cache_dir, exist_ok=True)
 
     def _generate_key(self, query: str, k: int, mode: str) -> str:
-        """Creates a unique SHA-256 hash based on the query text, retrieval count and the search mode."""
+        """Creates a unique SHA-256 hash based on the
+            query text, retrieval count and the search mode."""
         query = query.strip().lower()
         key = f"query:{query}|k:{k}|mode:{mode}"
         return hashlib.sha256(key.encode('utf-8')).hexdigest()

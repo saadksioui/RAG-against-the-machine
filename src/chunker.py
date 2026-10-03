@@ -24,7 +24,6 @@ class BaseChunker(ABC):
         pass
 
 
-
 class PythonChunker(BaseChunker):
     def chunk(self, file_path: str) -> List[Chunk]:
         path_obj = Path(file_path)
@@ -32,7 +31,7 @@ class PythonChunker(BaseChunker):
             raise FileNotFoundError(f"Error: File {file_path} not found!")
         extension = path_obj.suffix.lower()
         if extension != ".py":
-            raise ValueError(f"Error: Only `.py` files are allowed")
+            raise ValueError("Error: Only `.py` files are allowed")
 
         with open(file_path, 'r') as file:
             content = file.read()
@@ -61,7 +60,7 @@ class PythonChunker(BaseChunker):
                     last_character_index=end
                 )
             )
-            start_from = max(start+1, end-self.overlap)
+            start_from = max(start + 1, end - self.overlap)
         return chunks
 
 
@@ -91,7 +90,7 @@ class TextChunker(BaseChunker):
             )
             results = docs.split_text(content)
         else:
-            raise ValueError(f"Error: Only `.md` and `.txt` files are allowed")
+            raise ValueError("Error: Only `.md` and `.txt` files are allowed")
         start_from = 0
         chunks = []
 
@@ -109,5 +108,5 @@ class TextChunker(BaseChunker):
                     last_character_index=end
                 )
             )
-            start_from = max(start+1, end-self.overlap)
+            start_from = max(start + 1, end - self.overlap)
         return chunks
