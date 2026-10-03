@@ -221,12 +221,16 @@ class RagCLI:
             results = self._semantic_search(query, k)
         elif search_mode == 'hybrid':
             results = self._hybrid_search(query, k)
+
+        output = []
         
         for src in results:
             start = src['metadata']['first_character_index']
             end = src['metadata']['last_character_index']
             file_path = src['metadata']['file_path']
+            output.append(f"{file_path} [{start}: {end}]")
             print(f"{file_path} [{start}: {end}]")
+        return output
 
     def search_dataset(self, dataset_path: str, k: int, save_directory: str, search_mode: str = 'bm25') -> None:
         """Run search over a whole dataset and write results to JSON."""
@@ -270,7 +274,7 @@ class RagCLI:
         cache_result = self.cache.get(query, k, search_mode)
         if cache_result is not None:
             print(f"\nFINAL ANSWER:\n{cache_result['response']}")
-            return
+            return cache_result['response']
 
         if search_mode == 'bm25':
             results = self._bm25_search(query, k)
@@ -282,6 +286,7 @@ class RagCLI:
         self.cache.set(query, k, search_mode, output)
         
         print(f"\nFINAL ANSWER:\n{output}")
+        return output
 
     def answer_dataset(self, student_search_results_path: str, save_directory: str, search_mode: str = "bm25") -> None:
         """Generate answers for a dataset, producing a final JSON file."""
