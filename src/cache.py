@@ -7,14 +7,15 @@ class Cache:
     def __init__(self, cache_dir: str, cache_file: str):
         self.cache_dir = cache_dir
         self.cache_path = os.path.join(cache_dir, cache_file)
+        os.makedirs(self.cache_dir, exist_ok=True)
 
-    def generate_key(self, query: str, k: int, mode: str) -> str:
+    def _generate_key(self, query: str, k: int, mode: str) -> str:
         """Creates a unique SHA-256 hash based on the query text, retrieval count and the search mode."""
         query = query.strip().lower()
         key = f"query:{query}|k:{k}|mode:{mode}"
         return hashlib.sha256(key.encode('utf-8')).hexdigest()
 
-    def read_cache(self) -> Dict[str, Any]:
+    def _read_cache(self) -> Dict[str, Any]:
         """Reads the cache file from disk."""
         if not os.path.exists(self.cache_path):
             return {}
@@ -24,8 +25,29 @@ class Cache:
         except (json.JSONDecodeError, IOError):
             return {}
 
-    def write_cache(self, cache_data: Dict[str, Any]):
-        """Writes the updated cache object back to disk."""
-        os.makedirs(self.cache_dir, exist_ok=True)
-        with open(self.cache_path, 'w', encoding='utf-8') as f:
-            json.dump(cache_data, f, indent=4)
+    def get(self, query: str, k: int, mode: str):
+        cache_key = self._generate_key(query, k, mode)
+        cache = self._read_cache()
+        return cache.get(cache_key, None)
+
+    def set(self, query: str, k: int, response: str, metadata) -> None:
+        """Saves the query response and optional source metadata to disk."""
+        cache_key = self._generate_key(query, k)
+        cache = self._read_cache()
+
+        cache[cache_key] = {
+            "query": query,
+            "k": k,
+            "response": response,
+            "metadata": metadata,
+        }
+
+        with open(self.cache_path, "w", encoding="utf-8") as f:
+            json.dump(cache, f, indent=4)
+
+    def flush(self) -> bool:
+        """Completely removes the cache file when data changes."""
+        if os.path.exists(self.cache_path):
+            os.remove(self.cache_path)
+            return True
+        return False
