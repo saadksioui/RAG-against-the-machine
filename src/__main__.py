@@ -7,6 +7,7 @@ import re
 from tqdm import tqdm
 from pathlib import Path
 from src.llm_model import LLM_Model
+from src.cache import Cache
 from src.chunker import TextChunker, PythonChunker
 from src.models import (
     MinimalSource,
@@ -26,7 +27,7 @@ class RagCLI:
         self.model = LLM_Model("Qwen/Qwen3-0.6B")
         self.client = chromadb.PersistentClient(path="data/chroma_db")
         self.collection = self.client.get_or_create_collection("rag_42")
-        self.cache_file = Path("data/processed/query_cache.json")
+        self.cache = Cache()
         self.all_chunks = []
 
     def _tokenizer(self, text: str):
@@ -82,7 +83,7 @@ class RagCLI:
             print("No changes detected. Index is up to date!")
             return
 
-        self.cache_file.unlink(missing_ok=True)
+        self.cache.flush()
 
         print(f"Sync stats: {len(new_files)} new, {len(modified_files)} modified, {len(deleted_files)} deleted.")
 
@@ -264,11 +265,20 @@ class RagCLI:
         with open(save_directory, 'w') as file:
             file.write(output.model_dump_json(indent=2))
     
-    def answer(self, query: str, k: int) -> None:
+    def answer(self, query: str, k: int, search_mode: str = "bm25") -> None:
         """Answer a single query using the retrieved context."""
-        
-        results = self._bm25_search(query, k)
+        cache_result = self.cache.get(query, k, search_mode)
+        if cache_result is not None:
+            return cache_result['response']
+
+        if search_mode == 'bm25':
+            results = self._bm25_search(query, k)
+        elif search_mode == 'semantic':
+            results = self._semantic_search(query, k)
+        elif search_mode == 'hybrid':
+            results = self._hybrid_search(query, k)
         output = self.model.generate(query, results, 256)
+        
         
         print(f"\nFINAL ANSWER:\n{output}")
 
