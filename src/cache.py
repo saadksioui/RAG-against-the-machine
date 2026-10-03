@@ -26,20 +26,20 @@ class Cache:
             return {}
 
     def get(self, query: str, k: int, mode: str):
+        """Gets the response of the query fron the cache file."""
         cache_key = self._generate_key(query, k, mode)
         cache = self._read_cache()
         return cache.get(cache_key, None)
 
-    def set(self, query: str, k: int, response: str, metadata) -> None:
-        """Saves the query response and optional source metadata to disk."""
-        cache_key = self._generate_key(query, k)
+    def set(self, query: str, k: int, mode: str, response: str) -> None:
+        """Saves the query response to disk."""
+        cache_key = self._generate_key(query, k, mode)
         cache = self._read_cache()
 
         cache[cache_key] = {
             "query": query,
             "k": k,
-            "response": response,
-            "metadata": metadata,
+            "response": response
         }
 
         with open(self.cache_path, "w", encoding="utf-8") as f:

@@ -27,7 +27,7 @@ class RagCLI:
         self.model = LLM_Model("Qwen/Qwen3-0.6B")
         self.client = chromadb.PersistentClient(path="data/chroma_db")
         self.collection = self.client.get_or_create_collection("rag_42")
-        self.cache = Cache()
+        self.cache = Cache("data/processed/cache", "llm_answers_cache.json")
         self.all_chunks = []
 
     def _tokenizer(self, text: str):
@@ -269,7 +269,8 @@ class RagCLI:
         """Answer a single query using the retrieved context."""
         cache_result = self.cache.get(query, k, search_mode)
         if cache_result is not None:
-            return cache_result['response']
+            print(f"\nFINAL ANSWER:\n{cache_result['response']}")
+            return
 
         if search_mode == 'bm25':
             results = self._bm25_search(query, k)
@@ -278,11 +279,11 @@ class RagCLI:
         elif search_mode == 'hybrid':
             results = self._hybrid_search(query, k)
         output = self.model.generate(query, results, 256)
-        
+        self.cache.set(query, k, search_mode, output)
         
         print(f"\nFINAL ANSWER:\n{output}")
 
-    def answer_dataset(self, student_search_results_path: str, save_directory: str) -> None:
+    def answer_dataset(self, student_search_results_path: str, save_directory: str, search_mode: str = "bm25") -> None:
         """Generate answers for a dataset, producing a final JSON file."""
         dataset_name = Path(student_search_results_path).parent.name
         output_dir = Path(save_directory) / dataset_name
@@ -300,8 +301,20 @@ class RagCLI:
             question_id = item.question_id
             question = item.question
             retrieved_sources = item.retrieved_sources
-            chunks = self._bm25_search(question, k)
-            answer = self.model.generate(question, chunks, 256)
+            cache_result = self.cache.get(question, k, search_mode)
+
+            if cache_result:
+                answer = cache_result['response']
+            else:
+                if search_mode == 'bm25':
+                    chunks = self._bm25_search(question, k)
+                elif search_mode == 'semantic':
+                    chunks = self._semantic_search(question, k)
+                elif search_mode == 'hybrid':
+                    chunks = self._hybrid_search(question, k)
+                answer = self.model.generate(question, chunks, 256)
+                self.cache.set(question, k, search_mode, answer)
+
             res = MinimalAnswer(
                 question_id = question_id,
                 question = question,

@@ -8,6 +8,7 @@ dependencies = [
     "accelerate>=1.15.0",
     "bm25s>=0.3.11",
     "chromadb>=1.5.9",
+    "fastapi>=0.142.2",
     "fire>=0.7.1",
     "langchain>=1.4.2",
     "langchain-text-splitters>=1.1.2",
@@ -15,4 +16,5 @@ dependencies = [
     "sentence-transformers>=6.1.0",
     "tqdm>=4.70.0",
     "transformers>=5.17.0",
+    "uvicorn>=0.54.0",
 ]
