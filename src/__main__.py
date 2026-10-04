@@ -180,7 +180,7 @@ class RagCLI:
         outputs = [
             {
                 "id": doc_id,
-                "document": document,
+                "content": document,
                 "metadata": metadata,
                 "distance": distance,
             }
@@ -196,17 +196,22 @@ class RagCLI:
     def _hybrid_search(self, query: str, k: int):
         bm25_results = self._bm25_search(query, k)
         semantic_results = self._semantic_search(query, k)
+        
         rrf_scores = {}
         metadata_lookup = {}
+        content_lookup = {}
+        
         for idx, item in enumerate(bm25_results):
             doc_id = item['id']
             metadata_lookup[doc_id] = item['metadata']
+            content_lookup[doc_id] = item['content']
             rank = idx + 1
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank)
 
         for idx, item in enumerate(semantic_results):
             doc_id = item['id']
             metadata_lookup[doc_id] = item['metadata']
+            content_lookup[doc_id] = item['content']
             rank = idx + 1
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank)
 
@@ -219,6 +224,7 @@ class RagCLI:
             top_k_results.append({
                 "id": doc_id,
                 "rrf_score": score,
+                "content": content_lookup[doc_id],
                 "metadata": metadata_lookup[doc_id]
             })
         return top_k_results

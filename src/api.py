@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from src.__main__ import RagCLI
@@ -20,6 +21,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="RAG Against The Machine API", lifespan=lifespan)
 
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.post('/search')
 def rag_search(request: QueryRequest):
@@ -36,8 +50,9 @@ def rag_answer(request: QueryRequest):
     try:
         result = app.state.service.answer(
             request.query, request.k, request.search_mode)
-        return {"query": request.query, "results": result}
+        return {"query": request.query, "result": result}
     except Exception as e:
+        print(e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
