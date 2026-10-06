@@ -13,3 +13,4 @@ chunks.txt
 files.json
 tst.py
 data/
+.mypy_cache/
