@@ -239,13 +239,11 @@ class RagCLI:
             results = self._hybrid_search(query, k)
 
         output = []
-
         for src in results:
             start = src['metadata']['first_character_index']
             end = src['metadata']['last_character_index']
             file_path = src['metadata']['file_path']
             output.append(f"{file_path} [{start}: {end}]")
-            print(f"{file_path} [{start}: {end}]")
         return output
 
     def search_dataset(self, dataset_path: str, k: int,
@@ -304,7 +302,6 @@ class RagCLI:
         output = self.model.generate(query, results, 256)
         self.cache.set(query, k, search_mode, output)
 
-        print(f"\nFINAL ANSWER:\n{output}")
         return output
 
     def answer_dataset(self, student_search_results_path: str,
