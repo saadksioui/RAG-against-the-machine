@@ -14,3 +14,5 @@ files.json
 tst.py
 data/
 .mypy_cache/
+evaluations/
+exams/

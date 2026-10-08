@@ -88,8 +88,8 @@ class RagCLI:
 
         print(
             f"Sync stats: {len(new_files)} new,"
-            "{len(modified_files)} modified,"
-            "{len(deleted_files)} deleted."
+            f"{len(modified_files)} modified,"
+            f"{len(deleted_files)} deleted."
         )
 
         files_to_remove = list(deleted_files) + modified_files
@@ -196,11 +196,9 @@ class RagCLI:
     def _hybrid_search(self, query: str, k: int):
         bm25_results = self._bm25_search(query, k)
         semantic_results = self._semantic_search(query, k)
-        
         rrf_scores = {}
         metadata_lookup = {}
         content_lookup = {}
-        
         for idx, item in enumerate(bm25_results):
             doc_id = item['id']
             metadata_lookup[doc_id] = item['metadata']
@@ -256,7 +254,6 @@ class RagCLI:
             print(f"This path `{dataset_path}` is incorrect!!")
             exit(1)
         dataset_name = Path(dataset_path).stem
-        save_directory = Path(save_directory) / dataset_name
         all_results = []
 
         for question in tqdm(questions):
@@ -281,8 +278,9 @@ class RagCLI:
                 )
             )
         output = StudentSearchResults(search_results=all_results, k=k)
+        save_directory = Path(save_directory)
         save_directory.mkdir(parents=True, exist_ok=True)
-        save_directory = save_directory / 'student_results.json'
+        save_directory = save_directory / f"{dataset_name}.json"
         with open(save_directory, 'w') as file:
             file.write(output.model_dump_json(indent=2))
 
@@ -290,7 +288,6 @@ class RagCLI:
         """Answer a single query using the retrieved context."""
         cache_result = self.cache.get(query, k, search_mode)
         if cache_result is not None:
-            print(f"\nFINAL ANSWER:\n{cache_result['response']}")
             return cache_result['response']
 
         if search_mode == 'bm25':
@@ -307,15 +304,15 @@ class RagCLI:
     def answer_dataset(self, student_search_results_path: str,
                        save_directory: str, search_mode: str = "bm25") -> None:
         """Generate answers for a dataset, producing a final JSON file."""
-        dataset_name = Path(student_search_results_path).parent.name
-        output_dir = Path(save_directory) / dataset_name
+        dataset_name = Path(student_search_results_path).name
+        output_dir = Path(save_directory)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         with open(student_search_results_path, 'r') as file:
             student_search_results = StudentSearchResults.model_validate_json(
                 file.read())
 
-        save_directory = output_dir / 'student_results.json'
+        save_directory = output_dir / dataset_name
         results = student_search_results.search_results
         k = student_search_results.k
         final_answers = []
