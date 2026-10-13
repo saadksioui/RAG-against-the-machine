@@ -1,3 +1,4 @@
+from typing import AsyncGenerator, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -13,7 +14,7 @@ class QueryRequest(BaseModel):
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     rag_cli = RagCLI()
     app.state.service = rag_cli
     yield
@@ -36,7 +37,7 @@ app.add_middleware(
 
 
 @app.post('/search')
-def rag_search(request: QueryRequest):
+def rag_search(request: QueryRequest) -> Dict[str, Any]:
     try:
         result = app.state.service.search(
             request.query, request.k, request.search_mode)
@@ -46,7 +47,7 @@ def rag_search(request: QueryRequest):
 
 
 @app.post('/answer')
-def rag_answer(request: QueryRequest):
+def rag_answer(request: QueryRequest) -> Dict[str, Any]:
     try:
         result = app.state.service.answer(
             request.query, request.k, request.search_mode)

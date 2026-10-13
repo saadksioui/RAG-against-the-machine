@@ -6,6 +6,7 @@ import json
 import re
 from tqdm import tqdm
 from pathlib import Path
+from typing import List, Dict, Any
 from src.llm_model import LLMModel
 from src.cache import Cache
 from src.chunker import TextChunker, PythonChunker
@@ -15,7 +16,8 @@ from src.models import (
     StudentSearchResults,
     MinimalAnswer,
     StudentSearchResultsAndAnswer,
-    RagDataset
+    RagDataset,
+    AnsweredQuestion
 )
 from src.constants import CHUNK_PATH, BM25_PATH, SYNC_STATE
 
@@ -23,15 +25,15 @@ from src.constants import CHUNK_PATH, BM25_PATH, SYNC_STATE
 class RagCLI:
     """Command-Line Interface for the RAG against the machine pipeline."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.dataset_path = Path("data/raw")
         self.model = LLMModel("Qwen/Qwen3-0.6B")
         self.client = chromadb.PersistentClient(path="data/chroma_db")
         self.collection = self.client.get_or_create_collection("rag_42")
         self.cache = Cache("data/processed/cache", "llm_answers_cache.json")
-        self.all_chunks = []
+        self.all_chunks: List[Dict[str, Any]] = []
 
-    def _tokenizer(self, text: str):
+    def _tokenizer(self, text: str) -> str:
         text = text.lower()
 
         text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
@@ -67,9 +69,9 @@ class RagCLI:
         new_files = []
         modified_files = []
         unchanged_files = []
-        for file in files:
-            file = str(file)
-            file_hash = self._get_file_hash(file)
+        for file_path in files:
+            file = str(file_path)
+            file_hash = self._get_file_hash(file_path)
             current_files[file] = file_hash
             if file not in sync_state:
                 new_files.append(file)
@@ -97,8 +99,8 @@ class RagCLI:
             self.collection.delete(where={'file_path': file})
 
         if CHUNK_PATH.exists():
-            with open(CHUNK_PATH, 'r', encoding='utf-8') as file:
-                self.all_chunks = json.load(file)
+            with open(CHUNK_PATH, 'r', encoding='utf-8') as f:
+                self.all_chunks = json.load(f)
 
         if self.all_chunks:
             self.all_chunks = [
@@ -111,12 +113,12 @@ class RagCLI:
             documents = []
             metadatas = []
             ids = []
-            for file in tqdm(process_files, desc="Chunking"):
-                file = Path(file)
-                if file.suffix.lower() == '.py':
-                    chunks = PythonChunker(max_chunk_size).chunk(file)
-                elif file.suffix.lower() in ['.md', '.txt']:
-                    chunks = TextChunker(max_chunk_size).chunk(file)
+            for file_str in tqdm(process_files, desc="Chunking"):
+                file_path = Path(file_str)
+                if file_path.suffix.lower() == '.py':
+                    chunks = PythonChunker(max_chunk_size).chunk(file_str)
+                elif file_path.suffix.lower() in ['.md', '.txt']:
+                    chunks = TextChunker(max_chunk_size).chunk(file_str)
                 for chunk in chunks:
                     idx = f"{chunk.file_path}_{chunk.first_character_index}"
                     metadata = {
@@ -153,8 +155,8 @@ class RagCLI:
 
         print("Semantic & Lexical indexing complete!")
         CHUNK_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(CHUNK_PATH, 'w', encoding='utf-8') as file:
-            json.dump(self.all_chunks, file, indent=2)
+        with open(CHUNK_PATH, 'w', encoding='utf-8') as f:
+            json.dump(self.all_chunks, f, indent=2)
 
         with open(SYNC_STATE, 'w', encoding='utf-8') as f:
             json.dump(current_files, f, indent=2)
@@ -175,7 +177,7 @@ class RagCLI:
         winners = [self.all_chunks[r] for r in results[0]]
         return winners
 
-    def _semantic_search(self, query: str, k: int):
+    def _semantic_search(self, query: str, k: int) -> List[Dict[str, Any]]:
         results = self.collection.query(query_texts=[query], n_results=k)
         outputs = [
             {
@@ -193,12 +195,12 @@ class RagCLI:
         ]
         return outputs
 
-    def _hybrid_search(self, query: str, k: int):
+    def _hybrid_search(self, query: str, k: int) -> List[Dict[str, Any]]:
         bm25_results = self._bm25_search(query, k)
         semantic_results = self._semantic_search(query, k)
-        rrf_scores = {}
-        metadata_lookup = {}
-        content_lookup = {}
+        rrf_scores: Dict[str, float] = {}
+        metadata_lookup: Dict[str, Dict[str, Any]] = {}
+        content_lookup: Dict[str, str] = {}
         for idx, item in enumerate(bm25_results):
             doc_id = item['id']
             metadata_lookup[doc_id] = item['metadata']
@@ -227,7 +229,8 @@ class RagCLI:
             })
         return top_k_results
 
-    def search(self, query: str, k: int, search_mode: str = 'bm25') -> None:
+    def search(self, query: str,
+               k: int, search_mode: str = 'bm25') -> List[str]:
         """Return the top-k sources for a single query."""
         if search_mode == 'bm25':
             results = self._bm25_search(query, k)
@@ -236,7 +239,7 @@ class RagCLI:
         elif search_mode == 'hybrid':
             results = self._hybrid_search(query, k)
 
-        output = []
+        output: List[str] = []
         for src in results:
             start = src['metadata']['first_character_index']
             end = src['metadata']['last_character_index']
@@ -278,17 +281,20 @@ class RagCLI:
                 )
             )
         output = StudentSearchResults(search_results=all_results, k=k)
-        save_directory = Path(save_directory)
-        save_directory.mkdir(parents=True, exist_ok=True)
-        save_directory = save_directory / f"{dataset_name}.json"
-        with open(save_directory, 'w') as file:
+        save_dir_path = Path(save_directory)
+        save_dir_path.mkdir(parents=True, exist_ok=True)
+        save_dir_path = save_dir_path / f"{dataset_name}.json"
+        with open(save_dir_path, 'w') as file:
             file.write(output.model_dump_json(indent=2))
 
-    def answer(self, query: str, k: int, search_mode: str = "bm25") -> None:
+    def answer(self, query: str,
+               k: int, search_mode: str = "bm25") -> str | None:
         """Answer a single query using the retrieved context."""
         cache_result = self.cache.get(query, k, search_mode)
         if cache_result is not None:
-            return cache_result['response']
+            if isinstance(cache_result['response'], str):
+                return cache_result['response']
+            return None
 
         if search_mode == 'bm25':
             results = self._bm25_search(query, k)
@@ -312,7 +318,7 @@ class RagCLI:
             student_search_results = StudentSearchResults.model_validate_json(
                 file.read())
 
-        save_directory = output_dir / dataset_name
+        save_dir_path = output_dir / dataset_name
         results = student_search_results.search_results
         k = student_search_results.k
         final_answers = []
@@ -344,7 +350,7 @@ class RagCLI:
             final_answers.append(res)
         result = StudentSearchResultsAndAnswer(
             search_results=final_answers, k=k)
-        with open(save_directory, 'w') as file:
+        with open(save_dir_path, 'w') as file:
             file.write(result.model_dump_json(indent=2))
 
     def _calculate_iou(self, start1: int, end1: int,
@@ -378,6 +384,8 @@ class RagCLI:
         total_recall = 0.0
         num_ques = len(dataset_results)
         for res in dataset_results:
+            if not isinstance(res, AnsweredQuestion):
+                continue
             student_res = student_dict.get(res.question_id)
             if not student_res:
                 continue
