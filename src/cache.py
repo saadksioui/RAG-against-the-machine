@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import os
 import json
 import hashlib
@@ -17,26 +17,35 @@ class Cache:
         key = f"query:{query}|k:{k}|mode:{mode}"
         return hashlib.sha256(key.encode('utf-8')).hexdigest()
 
-    def _read_cache(self) -> Dict[str, Any]:
+    def _read_cache(self) -> Optional[Dict[str, Any]]:
         """Reads the cache file from disk."""
         if not os.path.exists(self.cache_path):
-            return {}
+            return None
         try:
             with open(self.cache_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                cache = json.load(f)
+                if cache is None:
+                    return None
+                if isinstance(cache, dict):
+                    return dict(cache)
+                return None
         except (json.JSONDecodeError, IOError):
-            return {}
+            return None
 
-    def get(self, query: str, k: int, mode: str):
+    def get(self, query: str, k: int, mode: str) -> Optional[Dict[str, Any]]:
         """Gets the response of the query fron the cache file."""
         cache_key = self._generate_key(query, k, mode)
         cache = self._read_cache()
+        if cache is None:
+            return None
         return cache.get(cache_key, None)
 
     def set(self, query: str, k: int, mode: str, response: str) -> None:
         """Saves the query response to disk."""
         cache_key = self._generate_key(query, k, mode)
         cache = self._read_cache()
+        if cache is None:
+            cache = {}
 
         cache[cache_key] = {
             "query": query,

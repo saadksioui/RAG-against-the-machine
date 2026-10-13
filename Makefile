@@ -5,7 +5,7 @@ install:
 
 run:
 	@echo "Indexing...."
-	uv run python -m src index --max_chunk_size=2000\
+	uv run python -m src index --max_chunk_size=2000
 
 	@echo "Search code dataset"
 	uv run python -m src search_dataset --dataset_path data/datasets/UnansweredQuestions/dataset_code_public.json --k 10 --save_directory data/output/search_results/
