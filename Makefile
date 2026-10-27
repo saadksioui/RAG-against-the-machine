@@ -1,4 +1,4 @@
-.PHONY: install run debug clean lint
+.PHONY: install run debug clean lint bonus
 
 install:
 	uv sync
