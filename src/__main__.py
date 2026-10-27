@@ -6,7 +6,7 @@ import json
 import re
 from tqdm import tqdm
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from src.llm_model import LLMModel
 from src.cache import Cache
 from src.chunker import TextChunker, PythonChunker
@@ -27,11 +27,17 @@ class RagCLI:
 
     def __init__(self) -> None:
         self.dataset_path = Path("data/raw")
-        self.model = LLMModel("Qwen/Qwen3-0.6B")
+        self._model: Optional[LLMModel] = None
         self.client = chromadb.PersistentClient(path="data/chroma_db")
         self.collection = self.client.get_or_create_collection("rag_42")
         self.cache = Cache("data/processed/cache", "llm_answers_cache.json")
         self.all_chunks: List[Dict[str, Any]] = []
+
+    @property
+    def model(self) -> LLMModel:
+        if self._model is None:
+            self._model = LLMModel("Qwen/Qwen3-0.6B")
+        return self._model
 
     def _tokenizer(self, text: str) -> str:
         text = text.lower()
